@@ -5,8 +5,8 @@ description: |
   适用场景：用户要求查看 Token 使用统计、需要展示"本应多少费用"、生成每条消息末尾的 Token 统计行。
   触发词：token统计、费用多少、省了多少钱、Token统计。
   数据源：自动适配 Hermes（state.db）和 OpenClaw（jsonl）两种底座。
-version: 1.5.0
-updated: 2026-05-10
+version: 2.0.0
+updated: 2026-05-12
 author: 妮小虾 🦐
 ---
 
@@ -14,10 +14,10 @@ author: 妮小虾 🦐
 
 生成 Token 使用统计和参考费用报告。
 
-## 输出格式（v1.5.0，唯一标准）
+## 输出格式（v2.0.0，唯一标准）
 
 ```
-📊 Token: {in} in / {out} out | cacheRead: {cache} | 本次总消耗: {total} | 本月: {count} 次 | 月累计: {monthly} | 💰 本次({model}参考){cost} | 💰 本月({model}参考){cost} | 模型: {model}
+📊 Token: {in} in / {out} out | cacheRead: {cache} | 本次总消耗: {total} | 本次计费token: {billable} | 本月: {count} 次 | 月累计总消耗: {monthly} | 本次费用: {fee} | 本月费用: {monthly_fee} | 💰 本次(参考Opus 4.7): {opus_cost} | 💰 本月(参考Opus 4.7): {opus_monthly_cost} | 模型: {model}
 ```
 
 字段说明：
@@ -130,7 +130,7 @@ A: 检查系统时间。脚本按当前月份过滤，sessions 文件中 timesta
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
-| 2026-05-10 | 1.5.0 | 支持 --model opus4.7/openai 双费率；新增 💰 费用图标；合并 Hermes state.db + OpenClaw JSONL 双底座数据源 |
+| 2026-05-12 | 2.0.0 | 新增本次计费token字段；新增实际费用（本次费用/月费费用）；保留Opus 4.7参考费率双行显示；月累计字段名统一为月累计总消耗 |
 | 2026-05-08 | 1.4.0 | 完善文档（费率表、FAQ、维护记录） |
 | 2026-05-07 | 1.3.x | 升级为 Opus 4.7 参考费率 |
 | 2026-04-06 | 1.0.0 | 初始版本 |

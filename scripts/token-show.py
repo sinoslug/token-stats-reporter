@@ -306,6 +306,16 @@ def scan_monthly_tokens(month=None):
     return {"input": 0, "output": 0, "cacheRead": 0, "msg_count": 0}
 
 
+def get_current_model_rates():
+    """根据当前模型返回实际费率（MiniMax 免费额度内返回0）"""
+    model = get_model().lower()
+    # MiniMax 模型暂不收费
+    if "minimax" in model or "m2.7" in model:
+        return {"input": 0, "output": 0, "cache": 0, "name": "MiniMax"}
+    # 其他模型暂用 Opus 4.7 费率
+    return DEFAULT_RATES["opus4.7"]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Token 统计输出")
     parser.add_argument("--model", "-m", choices=["opus4.7", "openai"], default="opus4.7",
@@ -315,9 +325,14 @@ def main():
     args = parser.parse_args()
 
     if args.rates:
-        rates = {"input": args.rates[0], "output": args.rates[1], "cache": args.rates[2], "name": "custom"}
+        ref_rates = {"input": args.rates[0], "output": args.rates[1], "cache": args.rates[2], "name": "custom"}
     else:
-        rates = DEFAULT_RATES[args.model]
+        ref_rates = DEFAULT_RATES[args.model]
+
+    # 实际计费费率（当前模型）
+    actual_rates = get_current_model_rates()
+    # Opus 4.7 参考费率固定
+    opus_rates = DEFAULT_RATES["opus4.7"]
 
     monthly = scan_monthly_tokens(get_current_month())
     last = get_last_msg_usage()
@@ -325,19 +340,25 @@ def main():
     so = last.get("output", 0)
     sc = last.get("cacheRead", 0)
     st = si + so + sc
+    billable = si + sc  # 计费token = input + cacheRead
     monthly_total = monthly["input"] + monthly["output"] + monthly["cacheRead"]
 
-    single_cost = calc_cost(si, so, sc, rates)
-    monthly_cost = calc_cost(monthly["input"], monthly["output"], monthly["cacheRead"], rates)
+    single_cost_actual = calc_cost(si, so, sc, actual_rates)
+    monthly_cost_actual = calc_cost(monthly["input"], monthly["output"], monthly["cacheRead"], actual_rates)
+    single_cost_opus = calc_cost(si, so, sc, opus_rates)
+    monthly_cost_opus = calc_cost(monthly["input"], monthly["output"], monthly["cacheRead"], opus_rates)
 
     line = (
         f"📊 Token: {format_int(si)} in / {format_int(so)} out | "
         f"cacheRead: {format_int(sc)} | "
         f"本次总消耗: {format_compact(st)} | "
+        f"本次计费token: {format_int(billable)} | "
         f"本月: {format_int(monthly['msg_count'])} 次 | "
-        f"月累计: {format_compact(monthly_total)} | "
-        f"💰 本次({rates['name']}参考){format_cost(single_cost)} | "
-        f"💰 本月({rates['name']}参考){format_cost(monthly_cost)} | "
+        f"月累计总消耗: {format_compact(monthly_total)} | "
+        f"本次费用: {format_cost(single_cost_actual)} | "
+        f"本月费用: {format_cost(monthly_cost_actual)} | "
+        f"💰 本次(参考Opus 4.7): {format_cost(single_cost_opus)} | "
+        f"💰 本月(参考Opus 4.7): {format_cost(monthly_cost_opus)} | "
         f"模型: {get_model()}"
     )
     print(line)
