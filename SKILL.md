@@ -94,22 +94,49 @@ Session 选择策略（已验证，最终版）：
 | 按 `ended_at DESC LIMIT 1` 选了空 cron session | 本次 token 估算值极小（8k vs 实际 206k） | 加 `msg_count > 5 OR input > 1000` 过滤 | v2.5.0 |
 | `except Exception: pass` 静默掩盖所有错误 | bug 导致数据全 0 但无任何提示 | 改为打印 traceback | v2.5.0 |
 
-## 各指标精度一览（v2.5.0）
+## 各指标精度一览（v2.6.0）
 
 | 指标 | 精度 | 说明 |
 |------|------|------|
-| 本次（最近已结束 session） | ✅ 精确 | state.db，`msg>5 or in>1000` 过滤 |
-| 本次（无已结束 session 时） | ⚠️ 估算 | 字符数×比例，仅作参考 |
+| 本次（最近已结束 session） | ✅ 精确 | state.db，`msg>5 or in>1000` 过滤 + 本月判断 |
+| 本次（无符合条件的已结束 session） | ⚠️ 估算 | 字符数×比例，从 session 文件估算 |
 | 本次（单轮交换） | ❌ 不可能 | Hermes 不存 per-turn 数据 |
 | 本月总消耗 | ✅ 精确 | state.db SUM（包含所有已结束 session） |
 | 本月活跃 session | ✅ 精确 | 已在 state.db 实时写入，v2.4.0 修复后计入 |
 | 本月用户消息数 | ✅ 精确 | session 文件逐条统计 |
 | 本月总花费（参考） | ✅ 精确 | 费率×token |
 
+## 踩坑记录（供未来调试参考）
+
+以下教训来自 2026-05-15 全面重构：
+
+**1. SQLite `KeyError` 被 `except Exception: pass` 静默吃掉的灾难**
+- 症状：函数返回全 0，无任何报错
+- 根因：`conn.row_factory = sqlite3.Row` 后没有紧接着 `cur = conn.cursor()`，导致 `cur.execute()` 抛出 `NameError`，但被 `except pass` 吞掉
+- 教训：`except` 必须至少打印 error，否则永远不知道失败
+
+**2. session 选择策略决定数据准确性**
+- 不能按 `started_at DESC`（会选到历史大 session）
+- 不能按 `ended_at DESC LIMIT 1`（可能选到空 cron session）
+- 不能按 mtime 选文件（空 session 的文件 mtime 也最新）
+- **正确策略**：`ORDER BY ended_at DESC LIMIT 15` → 逐个跳过 `msg≤5 AND in≤1000` → 第一个符合条件的就是当前对话
+
+**3. Hermes 不写 `ended_at = 0`**
+- 活跃 session 不在 state.db 里
+- `WHERE ended_at > 0` 会排除还在跑的所有 session → 月累计少一大截
+- `WHERE ended_at = 0` 永远返回空
+- **正确理解**：活跃 session 只有 session 文件，state.db 里只有已关闭的
+
+**4. `SESSIONS_DIR` 路径写错就永远找不到文件**
+- OpenClaw: `~/.openclaw/agents/main/sessions`
+- Hermes: `~/.hermes/sessions`
+- 写错路径：glob 返回空列表，文件估算分支永远不执行
+
 ## 更新记录
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-05-15 | 2.6.0 | 明确标注仅适用于 Hermes 平台（不适用 OpenClaw）；新增「踩坑记录」章节，汇总4条核心调试教训（KeyError静默、session选择策略、ended_at=0误解、路径写错）|
 | 2026-05-15 | 2.5.0 | **Critical bug fix**：6个 bug 一并修复——`cur = conn.cursor()` 漏写、SELECT 缺 `started_at` 列、`SESSIONS_DIR` 路径错误、按 mtime 选空 session、`except pass` 静默掩盖错误。Session 选择策略改为：`ORDER BY ended_at DESC LIMIT 15` + 跳过空 session（msg≤5 AND in≤1000）|
 | 2026-05-15 | 2.4.0 | **Critical bug fix**：`hermes_scan_monthly` 移除 `WHERE ended_at > 0`，活跃 session（ended_at=0）现已计入月累计。月累计从 62.13M 修正为 ~68M |
 | 2026-05-15 | 2.3.0 | **重大修复**：① 输出格式 `本月: X 次` → `本月: X 条用户消息`；② 新增 `hermes_scan_monthly_user_messages()` 从 session 文件统计实际用户消息数；③ session 文件选择逻辑：收集所有 mtime>cutoff 的候选，按 messages 数组长度降序选最多的；④ session 时间戳格式明确；⑤ 估算回退条件改为估算input > state.db input 才用估算值 |

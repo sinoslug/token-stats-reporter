@@ -1,42 +1,24 @@
-# Skill 更新路径（2026-05-10）
+# Skill 更新路径（2026-05-15 更新）
 
-## 问题
-GitHub API 有频率限制（403 Rate Limit），直接 `api.github.com` 可能失败。
+## ⚠️ 重要前提
 
-## 可行的更新路径
+**本 skill（token-stats-reporter）从 v2.6.0 起仅适用于 Hermes 平台。**
 
-### 路径1：clawhub.ai 下载（推荐，2026-05-10 验证可用）
+- 数据源：`~/.hermes/state.db` + `~/.hermes/sessions/`
+- OpenClaw 平台有**独立的同名脚本**：`~/.openclaw/workspace/scripts/token-show.py`（基于 JSONL）
+- 两者数据互不相通，clawhub 上的通用版不再适用于此 skill
+
+## 更新源
+
+### 源1：GitHub（推荐，本 skill 的唯一更新源）
 ```
-https://wry-manatee-359.convex.site/api/v1/download?slug=<skill-slug>
+https://github.com/sinoslug/token-stats-reporter
 ```
-返回 zip 包，内含 `_meta.json`、`SKILL.md`、`scripts/` 等文件。
-
-**注意**：clawhub 上的版本 `scripts/token-show.py` 只读 OpenClaw JSONL，不支持 Hermes state.db。
-更新时需要将 clawhub 的新功能（如 `--model opus4.7/openai` 费率参数）合并进本地双底座版脚本，
-不要直接用 clawhub 脚本覆盖。详见 `references/skill-update-checklist.md` Step 3。
-
-### 路径2：GitHub API（受频率限制）
-```
-https://api.github.com/repos/<owner>/<repo>/git/trees/main?recursive=1
-```
-需要 `Authorization: token <gh_token>` header 才能突破匿名限制。
-
-### 路径3：raw.githubusercontent.com（受频率限制）
-```
-https://raw.githubusercontent.com/<owner>/<repo>/main/<path>
-```
-
-## 验证命令
 ```bash
-# 下载并验证
-python3 ~/.hermes/skills/openclaw-imports/token-stats-reporter/scripts/token-show.py
-cat ~/.hermes/skills/openclaw-imports/token-stats-reporter/_meta.json
+cd ~/.hermes/skills/openclaw-imports/token-stats-reporter
+git pull
 ```
 
-## SKILL.md 人工检查清单
-下载新版本后，检查以下字段是否与脚本实际输出一致：
-- [ ] 输出格式模板（`📊 Token: ...`）
-- [ ] `--model` 参数名（clawhub 版本用 `opus4.7` / `openai`）
-- [ ] 字段名（无 `本次计费token`，用 `本次总消耗`）
-- [ ] 数据源是否包含 Hermes（`~/.hermes/state.db`）
-- [ ] ZhangQin 必加 token 统计的特殊要求
+### 源2：clawhub.ai（❌ 已废弃，不建议使用）
+clawhub 上的 token-stats-reporter 是通用版本（含 OpenClaw JSONL 支持），与 Hermes 版本不兼容。
+如果 clawhub 有新版本，**不要直接覆盖**，请对比 SKILL.md 和脚本差异后手动合并。
