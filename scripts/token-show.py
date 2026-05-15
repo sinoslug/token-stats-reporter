@@ -81,9 +81,8 @@ def hermes_get_last_session():
     """获取当前对话 session 的 token 用量。
 
     策略：
-    1. 从 state.db 找本月的 session（按 ended_at DESC），排除 cron 空 session
-    2. 如果最近 session 消息数 > 5，用它（state.db 数据是准的）
-    3. 否则从 session 文件估算（活跃 session 还没落库）
+    1. 优先用 ended_at IS NULL 的活跃 session（state.db 实时更新中，token 最准确）
+    2. 如果没有活跃 session，用最近刚结束的 session（按 ended_at DESC）
     """
     try:
         import glob as _glob, os as _os, re as _re
@@ -92,12 +91,14 @@ def hermes_get_last_session():
         conn = sqlite3.connect(STATE_DB)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
+
+        # 策略1：找 ended_at IS NULL 的活跃 session（token 数据最准确）
         cur.execute("""
             SELECT id, input_tokens, output_tokens, cache_read_tokens, model, ended_at, message_count, started_at
             FROM sessions
-            WHERE ended_at > 0
-            ORDER BY ended_at DESC
-            LIMIT 15
+            WHERE ended_at IS NULL
+            ORDER BY started_at DESC
+            LIMIT 10
         """)
         rows = cur.fetchall()
         conn.close()
@@ -108,9 +109,39 @@ def hermes_get_last_session():
             if started:
                 if _datetime.fromtimestamp(started).strftime("%Y-%m") != this_month:
                     continue
+            inp = r["input_tokens"] or 0
+            # 跳过几乎没有 token 的异常活跃 session
+            if inp > 500:
+                return {
+                    "input": inp,
+                    "output": r["output_tokens"] or 0,
+                    "cacheRead": r["cache_read_tokens"] or 0,
+                    "model": r["model"] or "unknown",
+                    "ended_at": None,
+                    "source": "active_session",
+                }
+
+        # 策略2：没有活跃 session，找最近刚结束的（ended_at DESC）
+        conn2 = sqlite3.connect(STATE_DB)
+        conn2.row_factory = sqlite3.Row
+        cur2 = conn2.cursor()
+        cur2.execute("""
+            SELECT id, input_tokens, output_tokens, cache_read_tokens, model, ended_at, message_count, started_at
+            FROM sessions
+            WHERE ended_at IS NOT NULL AND ended_at > 0
+            ORDER BY ended_at DESC
+            LIMIT 15
+        """)
+        rows2 = cur2.fetchall()
+        conn2.close()
+
+        for r in rows2:
+            started = r["started_at"]
+            if started:
+                if _datetime.fromtimestamp(started).strftime("%Y-%m") != this_month:
+                    continue
             msg_count = r["message_count"] or 0
             inp = r["input_tokens"] or 0
-            # 跳过空 session（cron 任务等）
             if msg_count > 5 or inp > 1000:
                 return {
                     "input": inp,
@@ -120,43 +151,6 @@ def hermes_get_last_session():
                     "ended_at": r["ended_at"],
                 }
 
-        # 没找到有内容的 session，从文件估算
-        session_files = _glob.glob(str(SESSIONS_DIR / "session_*.json"))
-        candidates = []
-        for fp in session_files:
-            try:
-                mtime = _os.path.getmtime(fp)
-                with open(fp, encoding="utf-8") as f:
-                    data = json.load(f)
-                msgs = data.get("messages", [])
-                if len(msgs) > 10:
-                    candidates.append((mtime, len(msgs), fp, data))
-            except Exception:
-                continue
-
-        if candidates:
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            mtime, msg_count, fp, data = candidates[0]
-            total_in = 0
-            for msg in data.get("messages", []):
-                content = ""
-                if msg.get("role") == "user":
-                    content = str(msg.get("content", ""))
-                elif msg.get("role") == "assistant":
-                    content = str(msg.get("content", "")) + str(msg.get("reasoning", ""))
-                if content:
-                    cn = len(_re.findall(r"[\u4e00-\u9fff]", content))
-                    en = len(_re.sub(r"[\u4e00-\u9fff]", "", content))
-                    total_in += cn * 2 + en * 0.25
-            total_out = int(total_in * 0.05)
-            total_cache = int(total_in * 0.80)
-            return {
-                "input": int(total_in),
-                "output": total_out,
-                "cacheRead": total_cache,
-                "model": data.get("model", "MiniMax-M2.7"),
-                "source": "estimate",
-            }
     except Exception as e:
         import sys as _sys
         _sys.stderr.write(f"hermes_get_last_session error: {e}\n")
