@@ -4,8 +4,9 @@ description: |
   生成 Token 使用统计和参考费用报告。支持 Anthropic Claude Opus 4.7 和 OpenAI GPT-5.5 两种参考费率，默认 Opus 4.7，输出"省了多少"的满足感。
   适用场景：用户要求查看 Token 使用统计、需要展示"本应多少费用"、生成每条消息末尾的 Token 统计行。
   触发词：token统计、费用多少、省了多少钱、Token统计。
-  数据源：自动适配 Hermes（state.db）和 OpenClaw（jsonl）两种底座。
-version: 2.5.0
+  ⚠️ 本 skill 专为 Hermes 平台设计（数据源：~/.hermes/state.db），不适用于 OpenClaw 平台。
+  ⚠️ OpenClaw 有独立的 token 统计脚本（位于 ~/.openclaw/workspace/scripts/token-show.py），两者数据互不相通。
+version: 2.6.0
 updated: 2026-05-15
 author: 妮小虾 🦐
 ---
